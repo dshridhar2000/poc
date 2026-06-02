@@ -1,4 +1,4 @@
-dshridhar2000@shridharDel2025:/mnt/c/SHRIDHAR/POC/go-gcp-hello$ history
+dshridhar2000@shridharDel2025:/mnt/c/SHRIDHAR/POC/go-gcp-hello$ history 
     1  code .
     2  sudo apt update && sudo apt -y upgrade
     3  sudo apt -y install build-essential git make unzip jq bash-completion     ca-certificates gnupg lsb-release pkg-config libssl-dev
