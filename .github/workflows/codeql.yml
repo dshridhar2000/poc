@@ -112,3 +112,129 @@ jobs:
           -H "Accept: application/vnd.github+json" \
           repos/${{ github.repository }}/code-scanning/alerts \
           --paginate > codeql-report.json
+
+    - name: Generate Reports
+      shell: bash
+      run: |
+    
+        python3 << 'EOF'
+    
+        import json
+        import csv
+        from collections import Counter
+    
+        with open("codeql-report.json") as f:
+            alerts = json.load(f)
+    
+        severity_count = Counter()
+    
+        md = []
+    
+        md.append("# CodeQL Vulnerability Report\n")
+        md.append(f"Total Alerts: {len(alerts)}\n")
+    
+        rows = []
+    
+        for a in alerts:
+    
+            rule = a.get("rule", {})
+    
+            severity = (
+                rule.get("security_severity_level")
+                or rule.get("severity")
+                or "unknown"
+            )
+    
+            severity_count[severity] += 1
+    
+            desc = rule.get("description", "")
+    
+            rule_id = rule.get("id", "")
+    
+            state = a.get("state", "")
+    
+            tool = a.get("tool", {}).get("name", "")
+    
+            path = ""
+    
+            line = ""
+    
+            inst = a.get("most_recent_instance")
+    
+            if inst:
+                loc = inst.get("location", {})
+                path = loc.get("path", "")
+                line = loc.get("start_line", "")
+    
+            rows.append([
+                severity,
+                rule_id,
+                desc,
+                state,
+                tool,
+                path,
+                line
+            ])
+    
+        md.append("## Summary\n")
+    
+        md.append("| Severity | Count |\n")
+        md.append("|----------|------:|\n")
+    
+        for s, c in severity_count.items():
+            md.append(f"| {s} | {c} |\n")
+    
+        md.append("\n## Findings\n")
+    
+        md.append("| Severity | Rule | File | Line |\n")
+        md.append("|----------|------|------|-----:|\n")
+    
+        for r in rows:
+            md.append(
+                f"| {r[0]} | {r[1]} | {r[5]} | {r[6]} |\n"
+            )
+    
+        with open("report.md", "w") as f:
+            f.writelines(md)
+    
+        with open("report.csv", "w", newline="") as f:
+    
+            writer = csv.writer(f)
+    
+            writer.writerow([
+                "Severity",
+                "Rule",
+                "Description",
+                "State",
+                "Tool",
+                "File",
+                "Line"
+            ])
+    
+            writer.writerows(rows)
+    
+        EOF
+
+    - name: Install Pandoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc
+    
+    - name: Convert Reports
+      run: |
+    
+        pandoc report.md -o report.html
+    
+        pandoc report.md -o report.pdf
+    
+    - name: Upload CodeQL Reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: codeql-report-${{ github.ref_name }}
+        retention-days: 90
+        path: |
+          codeql-report.json
+          report.md
+          report.html
+          report.csv
+          report.pdf    
