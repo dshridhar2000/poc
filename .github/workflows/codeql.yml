@@ -220,12 +220,12 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pandoc
     
-    - name: Convert Reports
+    - name: Generate HTML Report
       run: |
-    
-        pandoc report.md -o report.html
-    
-        pandoc report.md -o report.pdf
+        pandoc report.md \
+          --standalone \
+          --metadata title="CodeQL Vulnerability Report" \
+          -o report.html
     
     - name: Upload CodeQL Reports
       uses: actions/upload-artifact@v4
@@ -237,4 +237,3 @@ jobs:
           report.md
           report.html
           report.csv
-          report.pdf    
