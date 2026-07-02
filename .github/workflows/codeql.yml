@@ -103,3 +103,12 @@ jobs:
       uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"
+    
+    - name: Download CodeQL Alerts
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh api \
+          -H "Accept: application/vnd.github+json" \
+          repos/${{ github.repository }}/code-scanning/alerts \
+          --paginate > codeql-report.json
