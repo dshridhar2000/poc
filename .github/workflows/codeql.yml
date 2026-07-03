@@ -111,75 +111,85 @@ jobs:
   
     permissions:
       security-events: read
-      contents: read    
-
+      contents: read
+  
     steps:
       - uses: actions/checkout@v4
-      ################################################################################
-      # Generate Enterprise Report Name
-      ################################################################################
+  
+      ##########################################################################
+      # Generate report filename
+      ##########################################################################
       - name: Generate Report Name
         shell: bash
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           REF_NAME="${GITHUB_REF_NAME//\//-}"
-          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%SUTC")
-      
-          REPORT_NAME="codeql-report_${REF_NAME}_${SHORT_SHA}_run-${GITHUB_RUN_NUMBER}_${TIMESTAMP}.csv"
-      
+          REPORT_DATE=$(date -u +"%d%b%Y")
+  
+          REPORT_NAME="codeql-report-${REF_NAME}-commit-${SHORT_SHA}-${REPORT_DATE}.csv"
+  
           echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_ENV
-      
-      ################################################################################
-      # Download CodeQL Alerts
-      ################################################################################
+  
+          echo "Report name:"
+          echo "$REPORT_NAME"
+  
+      ##########################################################################
+      # Wait a few seconds for GitHub to finish indexing CodeQL results
+      ##########################################################################
+      - name: Wait for Code Scanning
+        run: sleep 20
+  
+      ##########################################################################
+      # Download alerts
+      ##########################################################################
       - name: Download CodeQL Alerts
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
           gh api \
             -H "Accept: application/vnd.github+json" \
             "/repos/${{ github.repository }}/code-scanning/alerts?per_page=100" \
             --paginate > codeql-report.json
-      
-      ################################################################################
-      # Generate CSV Report
-      ################################################################################
+  
+      ##########################################################################
+      # Generate CSV
+      ##########################################################################
       - name: Generate CSV Report
         shell: bash
         run: |
           python3 << 'EOF'
-          import json
           import csv
+          import json
           import os
           import subprocess
           from datetime import datetime
-      
+  
           commit_sha = subprocess.check_output(
-              ["git", "rev-parse", "HEAD"],
+              ["git","rev-parse","HEAD"],
               text=True
           ).strip()
-      
+  
           short_sha = subprocess.check_output(
-              ["git", "rev-parse", "--short", "HEAD"],
+              ["git","rev-parse","--short","HEAD"],
               text=True
           ).strip()
-      
-          release_tag = os.environ.get("GITHUB_REF_NAME", "")
-          scan_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-      
-          with open("codeql-report.json", "r", encoding="utf-8") as f:
+  
+          ref_name = os.environ.get("GITHUB_REF_NAME","")
+  
+          scan_date = datetime.utcnow().strftime("%d-%b-%Y %H:%M:%S UTC")
+  
+          with open("codeql-report.json","r",encoding="utf-8") as f:
               alerts = json.load(f)
-      
-          with open("report.csv", "w", newline="", encoding="utf-8") as csvfile:
-      
+  
+          with open("report.csv","w",newline="",encoding="utf-8") as csvfile:
+  
               writer = csv.writer(csvfile)
-      
+  
               writer.writerow([
-                  "Release Tag",
+                  "Branch/Release",
                   "Commit SHA",
                   "Short Commit",
-                  "Scan Date (UTC)",
+                  "Scan Date",
                   "Severity",
                   "Rule ID",
                   "Rule Name",
@@ -190,64 +200,66 @@ jobs:
                   "Line",
                   "Alert URL"
               ])
-      
+  
               for alert in alerts:
-      
-                  rule = alert.get("rule", {})
-      
+  
+                  rule = alert.get("rule",{})
+  
                   severity = (
                       rule.get("security_severity_level")
                       or rule.get("severity")
                       or "Unknown"
                   )
-      
+  
                   location = (
-                      alert.get("most_recent_instance", {})
-                           .get("location", {})
+                      alert.get("most_recent_instance",{})
+                           .get("location",{})
                   )
-      
+  
                   writer.writerow([
-                      release_tag,
+                      ref_name,
                       commit_sha,
                       short_sha,
                       scan_date,
                       severity,
-                      rule.get("id", ""),
-                      rule.get("name", ""),
-                      rule.get("description", ""),
-                      alert.get("state", ""),
-                      alert.get("tool", {}).get("name", ""),
-                      location.get("path", ""),
-                      location.get("start_line", ""),
-                      alert.get("html_url", "")
+                      rule.get("id",""),
+                      rule.get("name",""),
+                      rule.get("description",""),
+                      alert.get("state",""),
+                      alert.get("tool",{}).get("name",""),
+                      location.get("path",""),
+                      location.get("start_line",""),
+                      alert.get("html_url","")
                   ])
-      
-          print(f"CSV report generated with {len(alerts)} alerts.")
+  
+          print(f"Generated CSV with {len(alerts)} alerts.")
           EOF
-      
-      ################################################################################
-      # Rename Report
-      ################################################################################
-      - name: Generate Report Name
+  
+      ##########################################################################
+      # Rename report
+      ##########################################################################
+      - name: Rename CSV Report
         shell: bash
         run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-      
-          REF_NAME="${GITHUB_REF_NAME//\//-}"
-      
-          REPORT_DATE=$(date -u +"%d%b%Y")
-      
-          REPORT_NAME="codeql-report-${REF_NAME}-commit-${SHORT_SHA}-${REPORT_DATE}.csv"
-      
-          echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_ENV
-      
-      ################################################################################
-      # Upload Artifact
-      ################################################################################
-      - name: Upload CodeQL CSV Report
+          mv report.csv "$REPORT_NAME"
+  
+      ##########################################################################
+      # Verify
+      ##########################################################################
+      - name: Verify Report
+        shell: bash
+        run: |
+          pwd
+          ls -lh
+          test -f "$REPORT_NAME"
+  
+      ##########################################################################
+      # Upload
+      ##########################################################################
+      - name: Upload CodeQL Report
         uses: actions/upload-artifact@v4
         with:
-          name: codeql-report-${{ github.run_number }}
+          name: codeql-report
           path: ${{ env.REPORT_NAME }}
           if-no-files-found: error
           retention-days: 90
