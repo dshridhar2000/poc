@@ -269,3 +269,34 @@ jobs:
           path: ${{ steps.report.outputs.report_file }}
           retention-days: 90
           if-no-files-found: error
+          
+      - name: Generate Reports
+        run: |
+          python3 scripts/generate_codeql_report.py \
+            --input codeql-report.json \
+            --csv "${{ steps.report.outputs.report_file }}" \
+            --html report.html
+      
+      - name: Install Chromium
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium
+      
+      - name: Generate PDF
+        run: |
+          chromium \
+            --headless \
+            --disable-gpu \
+            --no-sandbox \
+            --print-to-pdf=report.pdf \
+            "file://$PWD/report.html"
+      
+      - name: Upload Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.report.outputs.artifact_name }}
+          path: |
+            ${{ steps.report.outputs.report_file }}
+            report.pdf
+          retention-days: 90
+          if-no-files-found: error
