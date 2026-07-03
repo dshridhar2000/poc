@@ -228,11 +228,18 @@ jobs:
       ################################################################################
       # Rename Report
       ################################################################################
-      - name: Rename CSV Report
+      - name: Generate Report Name
         shell: bash
         run: |
-          mv report.csv "$REPORT_NAME"
-          ls -lh
+          SHORT_SHA=$(git rev-parse --short HEAD)
+      
+          REF_NAME="${GITHUB_REF_NAME//\//-}"
+      
+          REPORT_DATE=$(date -u +"%d%b%Y")
+      
+          REPORT_NAME="codeql-report-${REF_NAME}-commit-${SHORT_SHA}-${REPORT_DATE}.csv"
+      
+          echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_ENV
       
       ################################################################################
       # Upload Artifact
