@@ -104,136 +104,132 @@ jobs:
       with:
         category: "/language:${{matrix.language}}"
     
+    ################################################################################
+    # Generate Enterprise Report Name
+    ################################################################################
+    - name: Generate Report Name
+      shell: bash
+      run: |
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        REF_NAME="${GITHUB_REF_NAME//\//-}"
+        TIMESTAMP=$(date -u +"%Y%m%d-%H%M%SUTC")
+    
+        REPORT_NAME="codeql-report_${REF_NAME}_${SHORT_SHA}_run-${GITHUB_RUN_NUMBER}_${TIMESTAMP}.csv"
+    
+        echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_ENV
+    
+    ################################################################################
+    # Download CodeQL Alerts
+    ################################################################################
     - name: Download CodeQL Alerts
       env:
         GH_TOKEN: ${{ github.token }}
+      shell: bash
       run: |
         gh api \
           -H "Accept: application/vnd.github+json" \
-          repos/${{ github.repository }}/code-scanning/alerts \
+          "/repos/${{ github.repository }}/code-scanning/alerts?per_page=100" \
           --paginate > codeql-report.json
-
-    - name: Generate Reports
+    
+    ################################################################################
+    # Generate CSV Report
+    ################################################################################
+    - name: Generate CSV Report
       shell: bash
       run: |
-    
         python3 << 'EOF'
-    
         import json
         import csv
-        from collections import Counter
+        import os
+        import subprocess
+        from datetime import datetime
     
-        with open("codeql-report.json") as f:
+        commit_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True
+        ).strip()
+    
+        short_sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            text=True
+        ).strip()
+    
+        release_tag = os.environ.get("GITHUB_REF_NAME", "")
+        scan_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    
+        with open("codeql-report.json", "r", encoding="utf-8") as f:
             alerts = json.load(f)
     
-        severity_count = Counter()
+        with open("report.csv", "w", newline="", encoding="utf-8") as csvfile:
     
-        md = []
-    
-        md.append("# CodeQL Vulnerability Report\n")
-        md.append(f"Total Alerts: {len(alerts)}\n")
-    
-        rows = []
-    
-        for a in alerts:
-    
-            rule = a.get("rule", {})
-    
-            severity = (
-                rule.get("security_severity_level")
-                or rule.get("severity")
-                or "unknown"
-            )
-    
-            severity_count[severity] += 1
-    
-            desc = rule.get("description", "")
-    
-            rule_id = rule.get("id", "")
-    
-            state = a.get("state", "")
-    
-            tool = a.get("tool", {}).get("name", "")
-    
-            path = ""
-    
-            line = ""
-    
-            inst = a.get("most_recent_instance")
-    
-            if inst:
-                loc = inst.get("location", {})
-                path = loc.get("path", "")
-                line = loc.get("start_line", "")
-    
-            rows.append([
-                severity,
-                rule_id,
-                desc,
-                state,
-                tool,
-                path,
-                line
-            ])
-    
-        md.append("## Summary\n")
-    
-        md.append("| Severity | Count |\n")
-        md.append("|----------|------:|\n")
-    
-        for s, c in severity_count.items():
-            md.append(f"| {s} | {c} |\n")
-    
-        md.append("\n## Findings\n")
-    
-        md.append("| Severity | Rule | File | Line |\n")
-        md.append("|----------|------|------|-----:|\n")
-    
-        for r in rows:
-            md.append(
-                f"| {r[0]} | {r[1]} | {r[5]} | {r[6]} |\n"
-            )
-    
-        with open("report.md", "w") as f:
-            f.writelines(md)
-    
-        with open("report.csv", "w", newline="") as f:
-    
-            writer = csv.writer(f)
+            writer = csv.writer(csvfile)
     
             writer.writerow([
+                "Release Tag",
+                "Commit SHA",
+                "Short Commit",
+                "Scan Date (UTC)",
                 "Severity",
-                "Rule",
+                "Rule ID",
+                "Rule Name",
                 "Description",
                 "State",
                 "Tool",
                 "File",
-                "Line"
+                "Line",
+                "Alert URL"
             ])
     
-            writer.writerows(rows)
+            for alert in alerts:
     
+                rule = alert.get("rule", {})
+    
+                severity = (
+                    rule.get("security_severity_level")
+                    or rule.get("severity")
+                    or "Unknown"
+                )
+    
+                location = (
+                    alert.get("most_recent_instance", {})
+                         .get("location", {})
+                )
+    
+                writer.writerow([
+                    release_tag,
+                    commit_sha,
+                    short_sha,
+                    scan_date,
+                    severity,
+                    rule.get("id", ""),
+                    rule.get("name", ""),
+                    rule.get("description", ""),
+                    alert.get("state", ""),
+                    alert.get("tool", {}).get("name", ""),
+                    location.get("path", ""),
+                    location.get("start_line", ""),
+                    alert.get("html_url", "")
+                ])
+    
+        print(f"CSV report generated with {len(alerts)} alerts.")
         EOF
-
-    - name: Install Pandoc
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y pandoc
     
-    - name: Generate HTML Report
+    ################################################################################
+    # Rename Report
+    ################################################################################
+    - name: Rename CSV Report
+      shell: bash
       run: |
-        pandoc report.md \
-          --standalone \
-          --metadata title="CodeQL Vulnerability Report" \
-          -o report.html
+        mv report.csv "$REPORT_NAME"
+        ls -lh
     
-    - name: Upload CodeQL Reports
+    ################################################################################
+    # Upload Artifact
+    ################################################################################
+    - name: Upload CodeQL CSV Report
       uses: actions/upload-artifact@v4
       with:
-        name: codeql-report-${{ github.ref_name }}
+        name: codeql-report-${{ github.run_number }}
+        path: ${{ env.REPORT_NAME }}
+        if-no-files-found: error
         retention-days: 90
-        path: |
-          codeql-report.json
-          report.md
-          report.html
-          report.csv
