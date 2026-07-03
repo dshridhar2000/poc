@@ -104,132 +104,143 @@ jobs:
       with:
         category: "/language:${{matrix.language}}"
     
-    ################################################################################
-    # Generate Enterprise Report Name
-    ################################################################################
-    - name: Generate Report Name
-      shell: bash
-      run: |
-        SHORT_SHA=$(git rev-parse --short HEAD)
-        REF_NAME="${GITHUB_REF_NAME//\//-}"
-        TIMESTAMP=$(date -u +"%Y%m%d-%H%M%SUTC")
-    
-        REPORT_NAME="codeql-report_${REF_NAME}_${SHORT_SHA}_run-${GITHUB_RUN_NUMBER}_${TIMESTAMP}.csv"
-    
-        echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_ENV
-    
-    ################################################################################
-    # Download CodeQL Alerts
-    ################################################################################
-    - name: Download CodeQL Alerts
-      env:
-        GH_TOKEN: ${{ github.token }}
-      shell: bash
-      run: |
-        gh api \
-          -H "Accept: application/vnd.github+json" \
-          "/repos/${{ github.repository }}/code-scanning/alerts?per_page=100" \
-          --paginate > codeql-report.json
-    
-    ################################################################################
-    # Generate CSV Report
-    ################################################################################
-    - name: Generate CSV Report
-      shell: bash
-      run: |
-        python3 << 'EOF'
-        import json
-        import csv
-        import os
-        import subprocess
-        from datetime import datetime
-    
-        commit_sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            text=True
-        ).strip()
-    
-        short_sha = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            text=True
-        ).strip()
-    
-        release_tag = os.environ.get("GITHUB_REF_NAME", "")
-        scan_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-    
-        with open("codeql-report.json", "r", encoding="utf-8") as f:
-            alerts = json.load(f)
-    
-        with open("report.csv", "w", newline="", encoding="utf-8") as csvfile:
-    
-            writer = csv.writer(csvfile)
-    
-            writer.writerow([
-                "Release Tag",
-                "Commit SHA",
-                "Short Commit",
-                "Scan Date (UTC)",
-                "Severity",
-                "Rule ID",
-                "Rule Name",
-                "Description",
-                "State",
-                "Tool",
-                "File",
-                "Line",
-                "Alert URL"
-            ])
-    
-            for alert in alerts:
-    
-                rule = alert.get("rule", {})
-    
-                severity = (
-                    rule.get("security_severity_level")
-                    or rule.get("severity")
-                    or "Unknown"
-                )
-    
-                location = (
-                    alert.get("most_recent_instance", {})
-                         .get("location", {})
-                )
-    
-                writer.writerow([
-                    release_tag,
-                    commit_sha,
-                    short_sha,
-                    scan_date,
-                    severity,
-                    rule.get("id", ""),
-                    rule.get("name", ""),
-                    rule.get("description", ""),
-                    alert.get("state", ""),
-                    alert.get("tool", {}).get("name", ""),
-                    location.get("path", ""),
-                    location.get("start_line", ""),
-                    alert.get("html_url", "")
-                ])
-    
-        print(f"CSV report generated with {len(alerts)} alerts.")
-        EOF
-    
-    ################################################################################
-    # Rename Report
-    ################################################################################
-    - name: Rename CSV Report
-      shell: bash
-      run: |
-        mv report.csv "$REPORT_NAME"
-        ls -lh
-    
-    ################################################################################
-    # Upload Artifact
-    ################################################################################
-    - name: Upload CodeQL CSV Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: codeql-report-${{ github.run_number }}
-        path: ${{ env.REPORT_NAME }}
-        if-no-files-found: error
-        retention-days: 90
+  generate-report:
+    name: Generate CodeQL CSV Report
+    needs: analyze
+    runs-on: ubuntu-latest
+  
+    permissions:
+      security-events: read
+      contents: read    
+
+    steps:
+      - uses: actions/checkout@v4
+      ################################################################################
+      # Generate Enterprise Report Name
+      ################################################################################
+      - name: Generate Report Name
+        shell: bash
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          REF_NAME="${GITHUB_REF_NAME//\//-}"
+          TIMESTAMP=$(date -u +"%Y%m%d-%H%M%SUTC")
+      
+          REPORT_NAME="codeql-report_${REF_NAME}_${SHORT_SHA}_run-${GITHUB_RUN_NUMBER}_${TIMESTAMP}.csv"
+      
+          echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_ENV
+      
+      ################################################################################
+      # Download CodeQL Alerts
+      ################################################################################
+      - name: Download CodeQL Alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/code-scanning/alerts?per_page=100" \
+            --paginate > codeql-report.json
+      
+      ################################################################################
+      # Generate CSV Report
+      ################################################################################
+      - name: Generate CSV Report
+        shell: bash
+        run: |
+          python3 << 'EOF'
+          import json
+          import csv
+          import os
+          import subprocess
+          from datetime import datetime
+      
+          commit_sha = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"],
+              text=True
+          ).strip()
+      
+          short_sha = subprocess.check_output(
+              ["git", "rev-parse", "--short", "HEAD"],
+              text=True
+          ).strip()
+      
+          release_tag = os.environ.get("GITHUB_REF_NAME", "")
+          scan_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+      
+          with open("codeql-report.json", "r", encoding="utf-8") as f:
+              alerts = json.load(f)
+      
+          with open("report.csv", "w", newline="", encoding="utf-8") as csvfile:
+      
+              writer = csv.writer(csvfile)
+      
+              writer.writerow([
+                  "Release Tag",
+                  "Commit SHA",
+                  "Short Commit",
+                  "Scan Date (UTC)",
+                  "Severity",
+                  "Rule ID",
+                  "Rule Name",
+                  "Description",
+                  "State",
+                  "Tool",
+                  "File",
+                  "Line",
+                  "Alert URL"
+              ])
+      
+              for alert in alerts:
+      
+                  rule = alert.get("rule", {})
+      
+                  severity = (
+                      rule.get("security_severity_level")
+                      or rule.get("severity")
+                      or "Unknown"
+                  )
+      
+                  location = (
+                      alert.get("most_recent_instance", {})
+                           .get("location", {})
+                  )
+      
+                  writer.writerow([
+                      release_tag,
+                      commit_sha,
+                      short_sha,
+                      scan_date,
+                      severity,
+                      rule.get("id", ""),
+                      rule.get("name", ""),
+                      rule.get("description", ""),
+                      alert.get("state", ""),
+                      alert.get("tool", {}).get("name", ""),
+                      location.get("path", ""),
+                      location.get("start_line", ""),
+                      alert.get("html_url", "")
+                  ])
+      
+          print(f"CSV report generated with {len(alerts)} alerts.")
+          EOF
+      
+      ################################################################################
+      # Rename Report
+      ################################################################################
+      - name: Rename CSV Report
+        shell: bash
+        run: |
+          mv report.csv "$REPORT_NAME"
+          ls -lh
+      
+      ################################################################################
+      # Upload Artifact
+      ################################################################################
+      - name: Upload CodeQL CSV Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-report-${{ github.run_number }}
+          path: ${{ env.REPORT_NAME }}
+          if-no-files-found: error
+          retention-days: 90
