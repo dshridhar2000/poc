@@ -114,35 +114,36 @@ jobs:
       contents: read
   
     steps:
+  
       - uses: actions/checkout@v4
   
       ##########################################################################
-      # Generate report filename
+      # Generate report name
       ##########################################################################
       - name: Generate Report Name
+        id: report
         shell: bash
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
-      
-          # Replace '/' with '-'
+  
           REF_NAME="${GITHUB_REF_NAME//\//-}"
-      
+  
           REPORT_DATE=$(date -u +"%d%b%Y")
-      
+  
           ARTIFACT_NAME="codeql-report-${REF_NAME}-${SHORT_SHA}"
-      
+  
           REPORT_FILE="${ARTIFACT_NAME}-${REPORT_DATE}.csv"
-      
-          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
-          echo "REPORT_FILE=$REPORT_FILE" >> $GITHUB_ENV
-      
-          echo "Artifact Name : $ARTIFACT_NAME"
-          echo "Report File   : $REPORT_FILE"
+  
+          echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          echo "report_file=$REPORT_FILE" >> "$GITHUB_OUTPUT"
+  
+          echo "Artifact : $ARTIFACT_NAME"
+          echo "File     : $REPORT_FILE"
   
       ##########################################################################
-      # Wait a few seconds for GitHub to finish indexing CodeQL results
+      # Wait for CodeQL indexing
       ##########################################################################
-      - name: Wait for Code Scanning
+      - name: Wait for CodeQL
         run: sleep 20
   
       ##########################################################################
@@ -160,10 +161,11 @@ jobs:
       ##########################################################################
       # Generate CSV
       ##########################################################################
-      - name: Generate CSV Report
+      - name: Generate CSV
         shell: bash
         run: |
           python3 << 'EOF'
+  
           import csv
           import json
           import os
@@ -239,33 +241,31 @@ jobs:
                   ])
   
           print(f"Generated CSV with {len(alerts)} alerts.")
+  
           EOF
   
       ##########################################################################
-      # Rename report
+      # Rename
       ##########################################################################
-      - name: Rename CSV Report
-        shell: bash
+      - name: Rename Report
         run: |
-          mv report.csv "$REPORT_NAME"
+          mv report.csv "${{ steps.report.outputs.report_file }}"
   
       ##########################################################################
       # Verify
       ##########################################################################
-      - name: Verify Report
-        shell: bash
+      - name: Verify
         run: |
-          pwd
           ls -lh
-          test -f "$REPORT_NAME"
+          test -f "${{ steps.report.outputs.report_file }}"
   
       ##########################################################################
       # Upload
       ##########################################################################
-      - name: Upload CodeQL Report
+      - name: Upload Report
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.REPORT_FILE }}
+          name: ${{ steps.report.outputs.artifact_name }}
+          path: ${{ steps.report.outputs.report_file }}
           retention-days: 90
           if-no-files-found: error
