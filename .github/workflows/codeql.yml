@@ -123,15 +123,21 @@ jobs:
         shell: bash
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
+      
+          # Replace '/' with '-'
           REF_NAME="${GITHUB_REF_NAME//\//-}"
+      
           REPORT_DATE=$(date -u +"%d%b%Y")
-  
-          REPORT_NAME="codeql-report-${REF_NAME}-commit-${SHORT_SHA}-${REPORT_DATE}.csv"
-  
-          echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_ENV
-  
-          echo "Report name:"
-          echo "$REPORT_NAME"
+      
+          ARTIFACT_NAME="codeql-report-${REF_NAME}-${SHORT_SHA}"
+      
+          REPORT_FILE="${ARTIFACT_NAME}-${REPORT_DATE}.csv"
+      
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
+          echo "REPORT_FILE=$REPORT_FILE" >> $GITHUB_ENV
+      
+          echo "Artifact Name : $ARTIFACT_NAME"
+          echo "Report File   : $REPORT_FILE"
   
       ##########################################################################
       # Wait a few seconds for GitHub to finish indexing CodeQL results
@@ -259,7 +265,7 @@ jobs:
       - name: Upload CodeQL Report
         uses: actions/upload-artifact@v4
         with:
-          name: codeql-report
-          path: ${{ env.REPORT_NAME }}
-          if-no-files-found: error
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.REPORT_FILE }}
           retention-days: 90
+          if-no-files-found: error
