@@ -131,27 +131,25 @@ jobs:
         id: report
         shell: bash
         run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-  
           if [ -n "${{ github.event.inputs.release_tag }}" ]; then
             REF_NAME="${{ github.event.inputs.release_tag }}"
           else
             REF_NAME="${GITHUB_REF_NAME}"
           fi
-          
+      
           REF_NAME="${REF_NAME//\//-}"
-  
+      
           REPORT_DATE=$(date -u +"%d%b%Y")
-  
-          ARTIFACT_NAME="codeql-report-${REF_NAME}-${SHORT_SHA}"
-  
+      
+          ARTIFACT_NAME="codeql-report-${REF_NAME}"
+      
           REPORT_FILE="${ARTIFACT_NAME}-${REPORT_DATE}.csv"
-  
+      
           echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
           echo "report_file=$REPORT_FILE" >> "$GITHUB_OUTPUT"
-  
+      
           echo "Artifact : $ARTIFACT_NAME"
-          echo "File     : $REPORT_FILE"
+          echo "Report   : $REPORT_FILE"
   
       ##########################################################################
       # Wait for CodeQL indexing
