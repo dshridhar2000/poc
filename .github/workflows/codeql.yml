@@ -317,7 +317,7 @@ jobs:
           <h1>CodeQL Vulnerability Report</h1>
           
           <p><b>Repository:</b> {html.escape(os.environ.get("GITHUB_REPOSITORY",""))}</p>
-          <p><b>Branch/Release:</b> {html.escape(ref_name)}</p>
+          <p><b>Branch:</b> {html.escape(ref_name)}</p>
           <p><b>Commit:</b> {commit_sha}</p>
           <p><b>Scan Date:</b> {scan_date}</p>
           
