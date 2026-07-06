@@ -64,6 +64,19 @@ jobs:
         # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
         # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
     steps:
+    - name: Validate Release Tag
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        TAG="${{ github.event.inputs.release_tag }}"
+        if [[ ! "$TAG" =~ ^PROJECT/release/cut/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid release_tag '${TAG}'. Expected format: PROJECT/release/cut/X.Y.Z"
+          exit 1
+        fi
+        if ! git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null 2>&1; then
+          echo "::error::Tag '${TAG}' does not exist in the repository."
+          exit 1
+        fi
+
     - name: Checkout Release
       uses: actions/checkout@v4
       with:
