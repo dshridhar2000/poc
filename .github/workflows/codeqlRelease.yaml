@@ -10,7 +10,7 @@
 # supported CodeQL languages.
 #
 name: "CodeQL Advanced on Release"
-run-name: "CodeQL Analysis — ${{ github.event.inputs.release_tag || github.ref_name }}"
+run-name: "CodeQL Analysis — ${{ inputs.release_tag || github.ref_name }}"
 
 on:
   push:
