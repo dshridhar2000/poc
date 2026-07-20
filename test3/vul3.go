@@ -1,6 +1,6 @@
 package main
 
-import (
+/*import (
 	"io"
 	"net/http"
 )
@@ -16,4 +16,4 @@ func ssrfHandler(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(resp.Body)
 
 	w.Write(body)
-}
+}*/
