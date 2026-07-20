@@ -116,6 +116,9 @@ jobs:
     steps:
   
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag || github.ref_name }}
+          fetch-depth: 0
   
       ##########################################################################
       # Generate report name
