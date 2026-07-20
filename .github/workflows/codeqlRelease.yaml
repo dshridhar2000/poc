@@ -9,20 +9,15 @@
 # the `language` matrix defined below to confirm you have the correct set of
 # supported CodeQL languages.
 #
-name: "CodeQL Advanced on Release"
-run-name: CodeQL Analysis - ${{ github.event.inputs.release_tag || github.ref_name }}
+name: "CodeQL Advanced"
 
 on:
   push:
-    tags:
-      - 'PROJECT/release/cut/*'
-
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Release tag (for example PROJECT/release/cut/5.8.1)'
-        required: true
-        type: string
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  #schedule:
+    #- cron: '43 2 * * 6'
 
 jobs:
   analyze:
@@ -65,30 +60,8 @@ jobs:
         # If you are analyzing a compiled language, you can modify the 'build-mode' for that language to customize how
         # your codebase is analyzed, see https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages
     steps:
-    - name: Validate Release Tag
-      if: github.event_name == 'workflow_dispatch'
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        TAG="${{ github.event.inputs.release_tag }}"
-        if [[ ! "$TAG" =~ ^PROJECT/release/cut/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::Invalid release_tag '${TAG}'. Expected format: PROJECT/release/cut/X.Y.Z"
-          exit 1
-        fi
-        if ! gh api "/repos/${{ github.repository }}/git/refs/tags/${TAG}" > /dev/null 2>&1; then
-          echo "::error::Tag '${TAG}' does not exist in the repository."
-          exit 1
-        fi
-
-    - name: Checkout Release
+    - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.inputs.release_tag || github.ref_name }}
-        fetch-depth: 0
-
-    - name: Get Tag Commit SHA
-      id: tag-sha
-      run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
     # Add any setup steps before running the `github/codeql-action/init` action.
     # This includes steps like installing compilers or runtimes (`actions/setup-node`
@@ -130,8 +103,6 @@ jobs:
       uses: github/codeql-action/analyze@v4
       with:
         category: "/language:${{matrix.language}}"
-        ref: ${{ github.event.inputs.release_tag != '' && format('refs/tags/{0}', github.event.inputs.release_tag) || github.ref }}
-        sha: ${{ steps.tag-sha.outputs.sha }}
     
   generate-report:
     name: Generate CodeQL CSV Report
@@ -145,9 +116,6 @@ jobs:
     steps:
   
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.release_tag || github.ref_name }}
-          fetch-depth: 0
   
       ##########################################################################
       # Generate report name
@@ -156,31 +124,43 @@ jobs:
         id: report
         shell: bash
         run: |
-          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
-            REF_NAME="${{ github.event.inputs.release_tag }}"
-          else
-            REF_NAME="${GITHUB_REF_NAME}"
-          fi
-      
-          REF_NAME="${REF_NAME//\//-}"
-      
+          SHORT_SHA=$(git rev-parse --short HEAD)
+  
+          REF_NAME="${GITHUB_REF_NAME//\//-}"
+  
           REPORT_DATE=$(date -u +"%d%b%Y")
-      
-          ARTIFACT_NAME="codeql-report-${REF_NAME}"
-      
+  
+          ARTIFACT_NAME="codeql-report-${REF_NAME}-${SHORT_SHA}"
+  
           REPORT_FILE="${ARTIFACT_NAME}-${REPORT_DATE}.csv"
-      
+  
           echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
           echo "report_file=$REPORT_FILE" >> "$GITHUB_OUTPUT"
-      
+  
           echo "Artifact : $ARTIFACT_NAME"
-          echo "Report   : $REPORT_FILE"
+          echo "File     : $REPORT_FILE"
   
       ##########################################################################
       # Wait for CodeQL indexing
       ##########################################################################
       - name: Wait for CodeQL
-        run: sleep 20
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Polling for CodeQL analysis on commit ${{ github.sha }}..."
+          for i in $(seq 1 20); do
+            COUNT=$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/code-scanning/analyses?ref=${{ github.sha }}" \
+              --jq 'length' 2>/dev/null || echo "0")
+            if [ "$COUNT" -gt "0" ]; then
+              echo "Analysis indexed ($COUNT result(s)). Proceeding."
+              exit 0
+            fi
+            echo "Attempt $i/20: analysis not yet indexed — waiting 30s..."
+            sleep 30
+          done
+          echo "WARNING: analysis not indexed after 10 min — report may reflect a previous run."
   
       ##########################################################################
       # Download alerts
@@ -189,22 +169,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
-            SCAN_REF="refs/tags/${{ github.event.inputs.release_tag }}"
-          else
-            SCAN_REF="${GITHUB_REF}"
-          fi
           gh api \
             -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/code-scanning/alerts?per_page=100&ref=${SCAN_REF}" \
+            "/repos/${{ github.repository }}/code-scanning/alerts?per_page=100&ref=${{ github.sha }}" \
             --paginate > codeql-report.json
   
       ##########################################################################
       # Generate CSV
       ##########################################################################
       - name: Generate CSV & HTML
-        env:
-          RELEASE_TAG: ${{ github.event.inputs.release_tag || github.ref_name }}
         shell: bash
         run: |
           python3 << 'EOF'
@@ -227,7 +200,7 @@ jobs:
               text=True
           ).strip()
           
-          ref_name = os.environ.get("RELEASE_TAG","")
+          ref_name = os.environ.get("GITHUB_REF_NAME","")
           
           scan_date = datetime.utcnow().strftime("%d-%b-%Y %H:%M:%S UTC")
           
@@ -360,7 +333,7 @@ jobs:
           <h1>CodeQL Vulnerability Report</h1>
           
           <p><b>Repository:</b> {html.escape(os.environ.get("GITHUB_REPOSITORY",""))}</p>
-          <p><b>Release:</b> {html.escape(ref_name)}</p>
+          <p><b>Branch:</b> {html.escape(ref_name)}</p>
           <p><b>Commit:</b> {commit_sha}</p>
           <p><b>Scan Date:</b> {scan_date}</p>
           
